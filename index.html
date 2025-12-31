@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mimic AI</title>
+
+<style>
+    body {
+        margin: 0;
+        background: #121212;
+        color: #f1f1f1;
+        font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+    }
+
+    header {
+        padding: 16px;
+        text-align: center;
+        font-size: 22px;
+        color: #ff4d4d;
+        border-bottom: 1px solid #333;
+    }
+
+    #chat {
+        flex: 1;
+        padding: 12px;
+        overflow-y: auto;
+    }
+
+    .msg {
+        margin-bottom: 10px;
+        line-height: 1.4;
+    }
+
+    .you {
+        color: #8fd3ff;
+    }
+
+    .mimic {
+        color: #ff6b6b;
+    }
+
+    #status {
+        text-align: center;
+        font-size: 14px;
+        color: #aaa;
+        padding: 6px;
+    }
+
+    footer {
+        padding: 12px;
+        display: flex;
+        justify-content: center;
+        border-top: 1px solid #333;
+    }
+
+    button {
+        font-size: 18px;
+        padding: 14px 30px;
+        border-radius: 30px;
+        border: none;
+        background: #ff4d4d;
+        color: white;
+        cursor: pointer;
+    }
+
+    button:active {
+        transform: scale(0.97);
+    }
+</style>
+</head>
+
+<body>
+
+<header>Mimic AI</header>
+
+<div id="chat"></div>
+<div id="status">Tap 🎤 and speak</div>
+
+<footer>
+    <button id="talkBtn">🎤 Talk</button>
+</footer>
+
+<script>
+/* =========================
+   CONFIG
+========================= */
+const OPENAI_API_KEY = "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";
+
+/* =========================
+   ELEMENTS
+========================= */
+const chat = document.getElementById("chat");
+const status = document.getElementById("status");
+const talkBtn = document.getElementById("talkBtn");
+
+/* =========================
+   HELPERS
+========================= */
+function addMessage(text, className) {
+    const div = document.createElement("div");
+    div.className = "msg " + className;
+    div.textContent = text;
+    chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
+}
+
+function speak(text) {
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = 0.65;
+    utter.pitch = 0.8;
+    speechSynthesis.speak(utter);
+}
+
+/* =========================
+   OPENAI CALL
+========================= */
+async function askGPT(text) {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + OPENAI_API_KEY
+        },
+        body: JSON.stringify({
+            model: "gpt-4o-mini",
+            messages: [
+                { role: "system", content: "You are a creepy animatronic called Mimic. Speak briefly." },
+                { role: "user", content: text }
+            ],
+            temperature: 0.8
+        })
+    });
+
+    const data = await response.json();
+    return data.choices[0].message.content;
+}
+
+/* =========================
+   SPEECH RECOGNITION
+========================= */
+talkBtn.addEventListener("click", () => {
+
+    const SpeechRecognition =
+        window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+        alert("Speech recognition not supported on this browser.");
+        return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-US";
+    recognition.continuous = false;
+    recognition.interimResults = false;
+
+    status.textContent = "Listening…";
+    recognition.start();
+
+    recognition.onresult = async (event) => {
+        const userText = event.results[0][0].transcript;
+        status.textContent = "Thinking…";
+
+        addMessage("You: " + userText, "you");
+
+        try {
+            const reply = await askGPT(userText);
+            addMessage("Mimic: " + reply, "mimic");
+            speak(reply);
+        } catch (err) {
+            addMessage("Mimic: (error reaching AI)", "mimic");
+            console.error(err);
+        }
+
+        status.textContent = "Tap 🎤 and speak";
+    };
+
+    recognition.onerror = (event) => {
+        console.error(event.error);
+        status.textContent = "Mic error: " + event.error;
+    };
+
+});
+</script>
+
+</body>
+</html>
