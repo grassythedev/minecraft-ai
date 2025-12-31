@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mimic AI</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+
+<style>
+body {
+    margin: 0;
+    background: #111;
+    color: #eee;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+header {
+    padding: 14px;
+    text-align: center;
+    color: #ff4d4d;
+    font-size: 22px;
+}
+#video {
+    width: 100%;
+    max-height: 40vh;
+    object-fit: cover;
+}
+#chat {
+    flex: 1;
+    padding: 10px;
+    overflow-y: auto;
+}
+.msg { margin-bottom: 8px; }
+.you { color: #7fd0ff; }
+.mimic { color: #ff6b6b; }
+#status {
+    text-align: center;
+    font-size: 14px;
+    color: #aaa;
+    padding: 6px;
+}
+footer {
+    display: flex;
+    justify-content: center;
+    padding: 10px;
+}
+button {
+    background: #ff4d4d;
+    color: white;
+    border: none;
+    border-radius: 30px;
+    padding: 14px 26px;
+    font-size: 18px;
+}
+</style>
+</head>
+
+<body>
+
+<header>Mimic AI</header>
+<video id="video" autoplay muted playsinline></video>
+
+<div id="chat"></div>
+<div id="status">Initializing vision…</div>
+
+<footer>
+    <button id="talkBtn">🎤 Talk</button>
+</footer>
+
+<script>
+/* ================= CONFIG ================= */
+const OPENAI_API_KEY = "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";
+
+/* ================= ELEMENTS ================= */
+const chat = document.getElementById("chat");
+const status = document.getElementById("status");
+const talkBtn = document.getElementById("talkBtn");
+const video = document.getElementById("video");
+
+/* ================= MEMORY ================= */
+let memory = JSON.parse(localStorage.getItem("mimicMemory")) || {};
+
+/* ================= HELPERS ================= */
+function saveMemory() {
+    localStorage.setItem("mimicMemory", JSON.stringify(memory));
+}
+
+function addMsg(text, cls) {
+    const div = document.createElement("div");
+    div.className = "msg " + cls;
+    div.textContent = text;
+    chat.appendChild(div);
+    chat.scrollTop = chat.scrollHeight;
+}
+
+function speak(text) {
+    const u = new SpeechSynthesisUtterance(text);
+    u.rate = 0.65;
+    u.pitch = 0.8;
+    speechSynthesis.speak(u);
+}
+
+/* ================= OPENAI ================= */
+async function askGPT(text) {
+    const r = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+            "Authorization": "Bearer " + OPENAI_API_KEY,
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            model: "gpt-3.5-turbo",
+            messages: [
+                { role: "system", content: "You are a creepy animatronic called Mimic." },
+                { role: "user", content: text }
+            ]
+        })
+    });
+    const d = await r.json();
+    return d.choices[0].message.content;
+}
+
+/* ================= CAMERA ================= */
+async function startCamera() {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    video.srcObject = stream;
+}
+
+/* ================= VISION ================= */
+let model;
+let lastSeen = "";
+
+async function loadVision() {
+    model = await cocoSsd.load();
+    status.textContent = "Vision active";
+    detectLoop();
+}
+
+async function detectLoop() {
+    const preds = await model.detect(video);
+    if (preds.length > 0) {
+        const obj = preds[0].class;
+
+        if (obj !== lastSeen) {
+            lastSeen = obj;
+
+            if (memory[obj]) {
+                addMsg("Mimic sees: " + memory[obj], "mimic");
+                speak("I see " + memory[obj]);
+            } else {
+                askWhatItIs(obj);
+            }
+        }
+    }
+    requestAnimationFrame(detectLoop);
+}
+
+/* ================= LEARNING ================= */
+function askWhatItIs(obj) {
+    addMsg("Mimic: What is this?", "mimic");
+    speak("What is this?");
+    listenForName(obj);
+}
+
+function listenForName(obj) {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const rec = new SpeechRecognition();
+    rec.lang = "en-US";
+    rec.start();
+
+    rec.onresult = (e) => {
+        const name = e.results[0][0].transcript;
+        memory[obj] = name;
+        saveMemory();
+
+        addMsg("You named it: " + name, "you");
+        addMsg("Mimic learned: " + name, "mimic");
+        speak("I will remember " + name);
+    };
+}
+
+/* ================= TALK BUTTON ================= */
+talkBtn.onclick = async () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const rec = new SpeechRecognition();
+    rec.lang = "en-US";
+    rec.start();
+
+    rec.onresult = async (e) => {
+        const text = e.results[0][0].transcript;
+        addMsg("You: " + text, "you");
+        const reply = await askGPT(text);
+        addMsg("Mimic: " + reply, "mimic");
+        speak(reply);
+    };
+};
+
+/* ================= START ================= */
+(async () => {
+    await startCamera();
+    await loadVision();
+})();
+</script>
+
+</body>
+</html>
